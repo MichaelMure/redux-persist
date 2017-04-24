@@ -8,6 +8,9 @@ export default function getStoredState (config, onComplete) {
   const whitelist = config.whitelist || false
   const transforms = config.transforms || []
   const keyPrefix = config.keyPrefix !== undefined ? config.keyPrefix : KEY_PREFIX
+  const commonKeys = config.commonKeys || []
+  const commonKeysPrefix = config.commonKeysPrefix || 'common'
+  const dynPrefix = config.dynPrefix || '@garbage'
 
   // fallback getAllKeys to `keys` if present (LocalForage compatability)
   if (storage.keys && !storage.getAllKeys) storage = {...storage, getAllKeys: storage.keys}
@@ -21,7 +24,7 @@ export default function getStoredState (config, onComplete) {
       complete(err)
     }
 
-    let persistKeys = allKeys.filter((key) => key.indexOf(keyPrefix) === 0).map((key) => key.slice(keyPrefix.length))
+    let persistKeys = extractKeys(allKeys)
     let keysToRestore = persistKeys.filter(passWhitelistBlacklist)
 
     let restoreCount = keysToRestore.length
@@ -61,8 +64,27 @@ export default function getStoredState (config, onComplete) {
     return true
   }
 
+  function extractKeys (allKeys) {
+    const keys = []
+    const common = `${keyPrefix}${commonKeysPrefix}:`
+    const dyn = `${keyPrefix}@${dynPrefix}:`
+
+    allKeys.forEach(key => {
+      if (key.startsWith(common)) {
+        keys.push(key.slice(common.length))
+      } else if (key.startsWith(dyn)) {
+        keys.push(key.slice(dyn.length))
+      }
+    })
+
+    return keys
+  }
+
   function createStorageKey (key) {
-    return `${keyPrefix}${key}`
+    if(commonKeys.includes(key))
+      return `${keyPrefix}${commonKeysPrefix}:${key}`
+    else
+      return `${keyPrefix}@${dynPrefix}:${key}`
   }
 
   if (typeof onComplete !== 'function' && !!Promise) {

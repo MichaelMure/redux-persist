@@ -1,6 +1,8 @@
 import { KEY_PREFIX } from './constants'
 
 export default function purgeStoredState (config, keys) {
+  throw 'Not supported yet in this fork of redux-persist'
+
   const storage = config.storage
   const keyPrefix = config.keyPrefix !== undefined ? config.keyPrefix : KEY_PREFIX
 

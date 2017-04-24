@@ -1,7 +1,10 @@
 import { KEY_PREFIX, REHYDRATE } from './constants'
 import createAsyncLocalStorage from './defaults/asyncLocalStorage'
 import purgeStoredState from './purgeStoredState'
+import getStoredState from './getStoredState'
 import stringify from 'json-stringify-safe'
+
+const garbagePrefix = '@garbage'
 
 export default function createPersistor (store, config) {
   // defaults
@@ -12,6 +15,9 @@ export default function createPersistor (store, config) {
   const transforms = config.transforms || []
   const debounce = config.debounce || false
   const keyPrefix = config.keyPrefix !== undefined ? config.keyPrefix : KEY_PREFIX
+  const commonKeys = config.commonKeys || []
+  const commonKeysPrefix = config.commonKeysPrefix || 'common'
+  let dynPrefix = config.dynPrefix || garbagePrefix
 
   // pluggable state shape (e.g. immutablejs)
   const stateInit = config._stateInit || {}
@@ -30,9 +36,12 @@ export default function createPersistor (store, config) {
   let paused = false
   let storesToProcess = []
   let timeIterator = null
+  let dirty = true
 
   store.subscribe(() => {
     if (paused) return
+
+    dirty = true
 
     let state = store.getState()
 
@@ -60,6 +69,7 @@ export default function createPersistor (store, config) {
       }, debounce)
     }
 
+    dirty = false
     lastState = state
   })
 
@@ -89,13 +99,65 @@ export default function createPersistor (store, config) {
     return state
   }
 
+  function forceFlush () {
+    const state = store.getState()
+    let storesToProcess = []
+
+    stateIterator(state, (subState, key) => {
+      if (!passWhitelistBlacklist(key)) return
+      if (storesToProcess.indexOf(key) !== -1) return
+      storesToProcess.push(key)
+    })
+
+    storesToProcess.forEach(key => {
+      let storageKey = createStorageKey(key)
+      let endState = transforms.reduce((subState, transformer) => transformer.in(subState, key), stateGetter(state, key))
+      if (typeof endState !== 'undefined') storage.setItem(storageKey, serializer(endState), warnIfSetError(key))
+    })
+
+    dirty = false
+  }
+
+  function changeDynPrefix (_dynPrefix = garbagePrefix) {
+    if(dirty) {
+      if(timeIterator) {
+        throw 'Not supported yet in this fork of redux-persist'
+      }
+      forceFlush()
+    }
+
+    dynPrefix = _dynPrefix
+    config.dynPrefix = _dynPrefix
+
+    return getStoredState(config)
+      .then(filterCommonKeys)
+      .then(adhocRehydrate)
+      .then(() => forceFlush())
+  }
+
   function createStorageKey (key) {
-    return `${keyPrefix}${key}`
+    if(commonKeys.includes(key)) {
+      return `${keyPrefix}${commonKeysPrefix}:${key}`
+    } else {
+      return `${keyPrefix}@${dynPrefix}:${key}`
+    }
+  }
+
+  function filterCommonKeys (state) {
+    let result = {}
+    Object.keys(state).forEach(key =>  {
+      if(!commonKeys.includes(key)) {
+        result[key] = state[key];
+      }
+    })
+    return result
   }
 
   // return `persistor`
   return {
     rehydrate: adhocRehydrate,
+    forceFlush: forceFlush,
+    changeDynPrefix: changeDynPrefix,
     pause: () => { paused = true },
     resume: () => { paused = false },
     purge: (keys) => purgeStoredState({storage, keyPrefix}, keys)
