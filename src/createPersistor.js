@@ -118,6 +118,12 @@ export default function createPersistor (store, config) {
     dirty = false
   }
 
+  function persistState(key, state) {
+    let storageKey = createStorageKey(key)
+    let endState = transforms.reduce((subState, transformer) => transformer.in(subState, key), state)
+    if (typeof endState !== 'undefined') storage.setItem(storageKey, serializer(endState), warnIfSetError(key))
+  }
+
   function changeDynPrefix (_dynPrefix = garbagePrefix) {
     if(dirty) {
       if(timeIterator) {
@@ -157,6 +163,7 @@ export default function createPersistor (store, config) {
   return {
     rehydrate: adhocRehydrate,
     forceFlush: forceFlush,
+    persistState: persistState,
     changeDynPrefix: changeDynPrefix,
     pause: () => { paused = true },
     resume: () => { paused = false },
