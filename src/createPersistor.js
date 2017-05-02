@@ -47,6 +47,7 @@ export default function createPersistor (store, config) {
 
     stateIterator(state, (subState, key) => {
       if (!passWhitelistBlacklist(key)) return
+      if (!passKeyFilter(key)) return
       if (stateGetter(lastState, key) === stateGetter(state, key)) return
       if (storesToProcess.indexOf(key) !== -1) return
       storesToProcess.push(key)
@@ -66,16 +67,23 @@ export default function createPersistor (store, config) {
         let endState = transforms.reduce((subState, transformer) => transformer.in(subState, key), stateGetter(store.getState(), key))
         if (typeof endState !== 'undefined') storage.setItem(storageKey, serializer(endState), warnIfSetError(key))
         storesToProcess.shift()
+
+        dirty = false
       }, debounce)
     }
 
-    dirty = false
     lastState = state
   })
 
   function passWhitelistBlacklist (key) {
     if (whitelist && whitelist.indexOf(key) === -1) return false
     if (blacklist.indexOf(key) !== -1) return false
+    return true
+  }
+
+  function passKeyFilter (key) {
+    if(commonKeys.includes(key)) return true
+    if(dynPrefix === garbagePrefix) return false
     return true
   }
 
@@ -105,6 +113,7 @@ export default function createPersistor (store, config) {
 
     stateIterator(state, (subState, key) => {
       if (!passWhitelistBlacklist(key)) return
+      if (!passKeyFilter(key)) return
       if (storesToProcess.indexOf(key) !== -1) return
       storesToProcess.push(key)
     })
@@ -125,9 +134,11 @@ export default function createPersistor (store, config) {
   }
 
   function changeDynPrefix (_dynPrefix = garbagePrefix) {
+    const wasPaused = paused
+    paused = true
     if(dirty) {
       if(timeIterator) {
-        throw 'Not supported yet in this fork of redux-persist'
+        clearInterval(timeIterator)
       }
       forceFlush()
     }
@@ -136,9 +147,9 @@ export default function createPersistor (store, config) {
     config.dynPrefix = _dynPrefix
 
     return getStoredState(config)
-      .then(filterCommonKeys)
       .then(adhocRehydrate)
       .then(() => forceFlush())
+      .then(() => paused = wasPaused)
   }
 
   function createStorageKey (key) {
@@ -147,16 +158,6 @@ export default function createPersistor (store, config) {
     } else {
       return `${keyPrefix}@${dynPrefix}:${key}`
     }
-  }
-
-  function filterCommonKeys (state) {
-    let result = {}
-    Object.keys(state).forEach(key =>  {
-      if(!commonKeys.includes(key)) {
-        result[key] = state[key];
-      }
-    })
-    return result
   }
 
   // return `persistor`
