@@ -133,7 +133,7 @@ export default function createPersistor (store, config) {
     if (typeof endState !== 'undefined') storage.setItem(storageKey, serializer(endState), warnIfSetError(key))
   }
 
-  function changeDynPrefix (_dynPrefix = garbagePrefix) {
+  function changeDynPrefix (_dynPrefix = garbagePrefix, reducer = null) {
     const wasPaused = paused
     paused = true
     if(dirty) {
@@ -146,9 +146,12 @@ export default function createPersistor (store, config) {
     dynPrefix = _dynPrefix
     config.dynPrefix = _dynPrefix
 
+    if(reducer) {
+      store.replaceReducer(reducer)
+    }
+
     return getStoredState(config)
       .then(adhocRehydrate)
-      .then(() => forceFlush())
       .then(() => paused = wasPaused)
   }
 
